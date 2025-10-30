@@ -3,13 +3,13 @@ import { Link } from "react-router"
 function Header(){
     return(
         <>
-            <header className="w-full h-[76px] bg-slate-200 flex  items-center justify-between">
+            <header className="w-full h-[76px] bg-slate-200 flex sticky z-50 items-center justify-between">
                <div className="w-[1440px] mx-auto flex justify-between items-center">
                  <div className="group-left flex space-x-2 justify-center items-center gap-3">
                     <Link to="/">
-                        <h1 className="text-[24px] font-bold text-blue-600">MyShop</h1>
+                        <h1 className="text-[24px] font-bold text-black font-Bitcount">SopPings</h1>
                     </Link>
-                    <Link to="Catogory">
+                    <Link to="/Category">
                         <div className="group rounded-[700px] px-3 py-2 hover:bg-slate-300 hover:shadow-sm flex flex-col justify-center items-center  transition-all duration-500 ">
                             <h1 className="text-slate-500 group-hover:text-slate-700">Explore</h1>
                         </div>

@@ -1,3 +1,14 @@
+/* Font BitCount */
+/* Font Marker */
+/* Font Bebas */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Bitcount+Grid+Single:wght@100..900&family=Permanent+Marker&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Swiper custom styles */
+html {
+  scroll-behavior: smooth;
+}
