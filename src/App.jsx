@@ -10,7 +10,7 @@ import Details from './Pages/Details';
 import Payment from './Pages/Payment';
 import Orders from './Pages/Orders';
 import OrderDetail from './Pages/OrderDetail';
-import Admin from './Pages/Admin';
+import Admin from './Components/admin/Admin ';
 function App() {
   return (
     <BrowserRouter>
