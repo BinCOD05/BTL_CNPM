@@ -1,4 +1,61 @@
-function User() {
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Loader, AlertCircle } from 'lucide-react';
+
+function SignIn() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await fetch('http://localhost:8081/auth/access-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          username: username,
+          password: password
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Tên đăng nhập hoặc mật khẩu không chính xác');
+      }
+
+      const data = await response.json();
+      
+      // Store token in localStorage
+      if (data.accessToken) {
+        localStorage.setItem('authToken', data.accessToken);
+        
+        // Optional: Store refresh token
+        if (data.refreshToken) {
+          localStorage.setItem('refreshToken', data.refreshToken);
+        }
+
+        // Trigger storage event to update Header
+        window.dispatchEvent(new Event('storage'));
+        
+        // Redirect to profile page
+        navigate('/profile');
+      }
+    } catch (err) {
+      setError(err.message || 'Lỗi đăng nhập. Vui lòng thử lại.');
+      console.error('Login error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-r from-slate-900 to-slate-700 px-6">
       <div className="w-full max-w-md space-y-6 rounded-3xl bg-white/90 p-8 shadow-xl">
@@ -7,16 +64,26 @@ function User() {
           <p className="mt-2 text-sm text-slate-500">Tiếp tục để quản lý đơn hàng và lưu sản phẩm yêu thích.</p>
         </header>
 
-        <form className="space-y-4">
+        {error && (
+          <div className="flex items-center gap-3 rounded-lg bg-red-50 p-4 text-red-700">
+            <AlertCircle className="h-5 w-5" />
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+        )}
+
+        <form className="space-y-4" onSubmit={handleLogin}>
           <div className="space-y-2 text-left">
-            <label htmlFor="email" className="text-sm font-medium text-slate-700">
-              Email
+            <label htmlFor="username" className="text-sm font-medium text-slate-700">
+              Tên đăng nhập
             </label>
             <input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              id="username"
+              type="text"
+              placeholder="binhhhi"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={loading}
+              className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
             />
           </div>
 
@@ -28,15 +95,20 @@ function User() {
               id="password"
               type="password"
               placeholder="••••••••"
-              className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+              className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
             />
           </div>
 
           <button
             type="submit"
-            className="w-full rounded-full bg-blue-600 py-3 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-blue-500"
+            disabled={loading}
+            className="w-full rounded-full bg-blue-600 py-3 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-blue-500 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            Đăng nhập
+            {loading && <Loader className="h-4 w-4 animate-spin" />}
+            {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
         </form>
 
@@ -48,4 +120,4 @@ function User() {
   );
 }
 
-export default User;
+export default SignIn;
