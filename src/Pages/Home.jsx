@@ -1,10 +1,11 @@
-import HomePage from '../Components/HomePage'
+import HomePage from '../Components/HomePage';
 
 function Home() {
-    return (
-        <div className="min-h-screen">
-            <HomePage />
-        </div>
-    )
-  }
+  return (
+    <main className="min-h-screen bg-slate-50 pb-20">
+      <HomePage />
+    </main>
+  );
+}
+
 export default Home;
