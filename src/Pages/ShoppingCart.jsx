@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Trash2, Plus, Minus, ShoppingCart as ShoppingCartIcon, Loader } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Trash2, Plus, Minus, ShoppingBag, ArrowRight, ArrowLeft, Check, Loader2 } from 'lucide-react';
 
 const formatVND = (value) => {
-  try {
-    return new Intl.NumberFormat('vi-VN').format(Number(value)) + ' đ';
-  } catch (e) {
-    return value + ' đ';
-  }
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 };
 
 function ShoppingCart() {
@@ -19,6 +15,7 @@ function ShoppingCart() {
 
   const getAuthToken = () => localStorage.getItem('authToken') || '';
 
+  // --- API CALLS ---
   const fetchCart = async () => {
     try {
       setLoading(true);
@@ -29,9 +26,8 @@ function ShoppingCart() {
         return;
       }
 
-      const response = await fetch(`/api/cart`, {
+      const response = await fetch(`http://localhost:8081/api/cart`, {
         headers: { 'Authorization': `Bearer ${token}` },
-        credentials: 'include'
       });
 
       if (!response.ok) throw new Error('Không thể tải giỏ hàng');
@@ -51,45 +47,48 @@ function ShoppingCart() {
 
   const apiCall = async (url, method, body) => {
     const token = getAuthToken();
-    if (!token) throw new Error('No auth token');
-    
     try {
-      const response = await fetch(url, {
+      const response = await fetch(`http://localhost:8081${url}`, {
         method,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        credentials: 'include',
         body: JSON.stringify(body)
       });
       
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(`${response.status}: ${errData.message || 'API Error'}`);
-      }
-      
+      if (!response.ok) throw new Error('Lỗi cập nhật');
       return (await response.json()).result;
     } catch (err) {
-      console.error('API Error:', url, err);
       throw err;
     }
   };
 
-  const handleQuantityChange = async (cartItemId, newQuantity) => {
-    setUpdatingItems(prev => new Set([...prev, cartItemId]));
+  // --- HANDLERS ---
+  const handleQuantityChange = async (e, cartItemId, newQuantity) => {
+    e.stopPropagation(); // Ngăn chặn việc click nút này kích hoạt chọn sản phẩm
+    
+    setUpdatingItems(prev => new Set(prev).add(cartItemId));
     try {
+      if (newQuantity === 0) {
+         await handleRemoveItem(e, cartItemId); // Truyền e vào để stopPropagation bên trong remove
+         return;
+      }
       const result = await apiCall(`/api/cart/items/${cartItemId}`, 'PUT', { quantity: newQuantity });
       setCartData(result);
+      window.dispatchEvent(new Event('cartUpdated'));
     } catch (err) {
-      setError(err.message);
+      console.error(err);
     } finally {
       setUpdatingItems(prev => { const s = new Set(prev); s.delete(cartItemId); return s; });
     }
   };
 
   const handleToggleSelection = async (cartItemId, currentSelected) => {
-    setUpdatingItems(prev => new Set([...prev, cartItemId]));
+    // Không cần stopPropagation ở đây vì đây là hàm gọi từ container cha hoặc checkbox
+    if (updatingItems.has(cartItemId)) return; // Tránh spam click khi đang loading
+
+    setUpdatingItems(prev => new Set(prev).add(cartItemId));
     try {
       const result = await apiCall(
         `/api/cart/items/${cartItemId}/select`, 
@@ -98,161 +97,238 @@ function ShoppingCart() {
       );
       setCartData(result);
     } catch (err) {
-      setError(err.message);
-      console.error('Toggle selection error:', err);
+      console.error(err);
     } finally {
       setUpdatingItems(prev => { const s = new Set(prev); s.delete(cartItemId); return s; });
     }
   };
 
+  const handleRemoveItem = async (e, cartItemId) => {
+    if (e) e.stopPropagation(); // Ngăn chặn sự kiện click lan ra thẻ cha
+    
+    if(!window.confirm("Bạn muốn xóa sản phẩm này khỏi giỏ?")) return;
+    
+    setUpdatingItems(prev => new Set(prev).add(cartItemId));
+    try {
+        const token = getAuthToken();
+        const response = await fetch(`http://localhost:8081/api/cart/items/${cartItemId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if(response.ok) {
+            fetchCart(); 
+            window.dispatchEvent(new Event('cartUpdated'));
+        }
+    } catch(err) {
+        console.error(err);
+    } finally {
+        setUpdatingItems(prev => { const s = new Set(prev); s.delete(cartItemId); return s; });
+    }
+  }
+
+  // --- CALCULATIONS ---
   const subtotal = cartData?.cartItemResponses?.reduce((sum, item) => item.selected ? sum + item.price * item.quantity : sum, 0) || 0;
-  const shipping = subtotal > 500000 ? 0 : 30000;
+  const shipping = 0; // Đã sửa: Luôn luôn Free ship
   const total = subtotal + shipping;
+  const totalItems = cartData?.cartItemResponses?.length || 0;
   const selectedCount = cartData?.cartItemResponses?.filter(item => item.selected).length || 0;
 
+  // --- RENDER STATES ---
   if (loading) {
     return (
-      <main className="min-h-screen bg-white pb-20 pt-24 flex items-center justify-center">
-        <div className="text-center">
-          <Loader className="h-10 w-10 animate-spin text-gray-900 mx-auto mb-4" />
-          <p className="text-gray-600">Đang tải giỏ hàng...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <Loader2 className="h-10 w-10 animate-spin text-blue-600 mb-4" />
+        <p className="text-gray-500 font-medium">Đang tải giỏ hàng của bạn...</p>
+      </div>
+    );
+  }
+
+  if (error || !cartData?.cartItemResponses?.length) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-gray-100">
+            <ShoppingBag className="h-10 w-10 text-gray-300" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Giỏ hàng đang trống</h2>
+          <p className="text-gray-500 mb-8">Có vẻ như bạn chưa thêm sản phẩm nào. Hãy khám phá cửa hàng ngay!</p>
+          <Link 
+            to="/store" 
+            className="inline-flex items-center justify-center px-8 py-3 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all hover:scale-105"
+          >
+            Mua sắm ngay <ArrowRight className="ml-2 h-4 w-4" />
+          </Link>
         </div>
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main className="min-h-screen bg-white pb-20 pt-24">
-        <section className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <p className="text-red-800 font-semibold mb-4">Lỗi: {error}</p>
-            <button 
-              onClick={fetchCart}
-              className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg"
-            >
-              Thử lại
-            </button>
-          </div>
-        </section>
-      </main>
-    );
-  }
-
-  if (!cartData?.cartItemResponses?.length) {
-    return (
-      <main className="min-h-screen bg-white pb-20 pt-24">
-        <section className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6">
-          <header className="space-y-2 text-center">
-            <h1 className="text-3xl font-bold text-gray-900">Giỏ hàng của bạn</h1>
-            <p className="text-sm text-gray-600">Bạn chưa có sản phẩm nào trong giỏ. Hãy tiếp tục mua sắm!</p>
-          </header>
-
-          <div className="flex flex-col items-center justify-center gap-6 rounded-xl bg-gray-50 p-10 text-center border border-gray-200">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-200 text-gray-400">
-              <ShoppingCartIcon className="h-10 w-10" />
-            </div>
-            <h2 className="text-2xl font-semibold text-gray-900">Chưa có sản phẩm</h2>
-            <p className="text-gray-600">Khám phá danh mục để tìm sản phẩm yêu thích của bạn</p>
-            <a
-              href="/Category"
-              className="rounded-lg bg-gray-900 hover:bg-gray-800 px-6 py-3 text-sm font-semibold text-white transition duration-300"
-            >
-              Khám phá sản phẩm
-            </a>
-          </div>
-        </section>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-white pb-20 pt-24">
-      <div className="mx-auto max-w-7xl px-6 lg:px-12">
-        <h1 className="text-3xl font-black text-gray-900 mb-8">Giỏ hàng của bạn</h1>
+    <div className="min-h-screen bg-gray-50 pt-20 pb-12 font-Roboto">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-3xl font-black text-gray-900">Giỏ hàng <span className="text-lg font-medium text-gray-500 ml-2">({totalItems} sản phẩm)</span></h1>
+          <Link to="/store" className="hidden md:flex items-center text-sm font-semibold text-blue-600 hover:text-blue-800">
+            <ArrowLeft className="mr-1 h-4 w-4" /> Tiếp tục mua sắm
+          </Link>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-4">
-            {cartData.cartItemResponses
-              .sort((a, b) => a.id - b.id)
-              .map(item => (
-              <div key={item.id} className="flex gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200 hover:border-gray-400 hover:shadow-lg hover:bg-gray-100 transition-all duration-300 cursor-pointer" onClick={() => handleToggleSelection(item.id, item.selected)}>
-                <input
-                  type="checkbox"
-                  checked={item.selected || false}
-                  onChange={() => handleToggleSelection(item.id, item.selected)}
-                  disabled={updatingItems.has(item.id)}
-                  className="w-5 h-5 rounded cursor-pointer mt-2"
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <img src={item.productImage || 'https://via.placeholder.com/96'} alt={item.productName} className="w-24 h-24 bg-gray-200 rounded-lg object-cover flex-shrink-0 hover:scale-105 transition-transform duration-300" />
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-900 truncate">{item.productName}</h3>
-                  <p className="text-sm text-gray-600 mb-2">{item.color}</p>
-                  <p className="text-lg font-bold text-gray-900">{formatVND(item.price)}</p>
-                </div>
-                <div className="flex flex-col items-end gap-2" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center border border-gray-300 rounded-lg bg-white">
-                    <button onClick={() => handleQuantityChange(item.id, Math.max(0, item.quantity - 1))} disabled={updatingItems.has(item.id)} className="px-3 py-2 hover:bg-gray-100 disabled:opacity-50 transition">
-                      <Minus className="h-4 w-4 text-gray-600" />
-                    </button>
-                    <span className="px-4 py-2 font-semibold text-gray-900 min-w-[40px] text-center">
-                      {updatingItems.has(item.id) ? <Loader className="h-4 w-4 animate-spin inline" /> : item.quantity}
-                    </span>
-                    <button onClick={() => handleQuantityChange(item.id, item.quantity + 1)} disabled={updatingItems.has(item.id)} className="px-3 py-2 hover:bg-gray-100 disabled:opacity-50 transition">
-                      <Plus className="h-4 w-4 text-gray-600" />
-                    </button>
+        <div className="flex flex-col lg:flex-row gap-8">
+          
+          {/* LEFT COLUMN: Cart Items */}
+          <div className="lg:w-2/3 space-y-4">
+            {cartData.cartItemResponses.map((item) => {
+              const isUpdating = updatingItems.has(item.id);
+              return (
+                <div 
+                  key={item.id} 
+                  // Thêm onClick vào thẻ cha và cursor-pointer
+                  onClick={() => handleToggleSelection(item.id, item.selected)}
+                  className={`group relative bg-white rounded-2xl p-4 border border-gray-200 shadow-sm transition-all hover:shadow-md cursor-pointer ${!item.selected ? 'opacity-70 bg-gray-50' : 'ring-1 ring-blue-100'}`}
+                >
+                  <div className="flex gap-4 sm:gap-6 items-center">
+                    {/* Checkbox */}
+                    <div className="relative flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={item.selected}
+                        // Stop propagation để tránh gọi onClick của cha 2 lần (dù logic toggle giống nhau)
+                        onClick={(e) => e.stopPropagation()} 
+                        onChange={() => handleToggleSelection(item.id, item.selected)}
+                        disabled={isUpdating}
+                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border border-gray-300 transition-all checked:border-blue-600 checked:bg-blue-600 disabled:cursor-not-allowed"
+                      />
+                      <Check className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100" />
+                    </div>
+
+                    {/* Image */}
+                    {/* Khi click vào ảnh vẫn cho phép điều hướng, cần stopPropagation */}
+                    <Link 
+                        to={`/product/detail/${item.productId}`} 
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-gray-100 bg-white"
+                    >
+                      <img
+                        src={item.productImage || 'https://via.placeholder.com/150'}
+                        alt={item.productName}
+                        className="h-full w-full object-cover object-center"
+                      />
+                    </Link>
+
+                    {/* Info */}
+                    <div className="flex flex-1 flex-col justify-between sm:flex-row sm:items-center">
+                      <div className="pr-4">
+                        <Link 
+                            to={`/product/detail/${item.productId}`} 
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-bold text-gray-900 hover:text-blue-600 transition-colors line-clamp-1 text-lg"
+                        >
+                          {item.productName}
+                        </Link>
+                        <p className="mt-1 text-sm text-gray-500">Màu sắc: {item.color || 'Tiêu chuẩn'}</p>
+                        <p className="mt-1 font-bold text-slate-900 sm:hidden">{formatVND(item.price)}</p>
+                      </div>
+
+                      {/* Quantity & Price (Desktop) */}
+                      <div className="mt-4 flex items-center justify-between sm:mt-0 sm:gap-6">
+                        <div 
+                            className="flex items-center rounded-lg border border-gray-300 bg-white"
+                            onClick={(e) => e.stopPropagation()} // Ngăn click vào vùng này chọn sản phẩm
+                        >
+                          <button
+                            onClick={(e) => handleQuantityChange(e, item.id, item.quantity - 1)}
+                            disabled={isUpdating}
+                            className="p-2 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <div className="w-10 text-center text-sm font-semibold text-gray-900">
+                            {isUpdating ? <Loader2 className="h-4 w-4 animate-spin mx-auto text-blue-500" /> : item.quantity}
+                          </div>
+                          <button
+                            onClick={(e) => handleQuantityChange(e, item.id, item.quantity + 1)}
+                            disabled={isUpdating}
+                            className="p-2 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="text-right hidden sm:block">
+                          <p className="text-lg font-bold text-slate-900">{formatVND(item.price * item.quantity)}</p>
+                          {item.quantity > 1 && <p className="text-xs text-gray-400">{formatVND(item.price)} / sản phẩm</p>}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2 w-full">
-                    <button onClick={() => navigate(`/Details/${item.productId}`)} disabled={updatingItems.has(item.id)} className="flex-1 px-4 py-2 border border-gray-300 hover:border-gray-500 bg-white hover:bg-gray-50 text-gray-900 rounded-lg font-semibold text-sm disabled:opacity-50 transition duration-200">
-                      Xem chi tiết
-                    </button>
-                    <button onClick={() => handleQuantityChange(item.id, 0)} disabled={updatingItems.has(item.id)} className="px-4 py-2 border border-gray-300 hover:border-red-400 bg-white hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg disabled:opacity-50 transition duration-200">
-                      <Trash2 className="h-5 w-5" />
-                    </button>
-                  </div>
+
+                  {/* Remove Button (Absolute top-right) */}
+                  <button 
+                    onClick={(e) => handleRemoveItem(e, item.id)}
+                    className="absolute top-4 right-4 text-gray-400 hover:text-red-500 transition-colors p-1"
+                    title="Xóa sản phẩm"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="sticky top-24 bg-white rounded-2xl p-6 border border-gray-300 shadow-lg">
-              <h2 className="text-xl font-bold text-gray-900 mb-6">Tóm tắt đơn hàng</h2>
-              <div className="space-y-3 mb-6 pb-6 border-b border-gray-300">
-                <div className="flex justify-between text-gray-700">
-                  <span>Số lượng hàng:</span>
-                  <span className="font-semibold">{cartData.totalItems}</span>
+          {/* RIGHT COLUMN: Order Summary */}
+          <div className="lg:w-1/3">
+            <div className="sticky top-24 bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6">Tổng đơn hàng</h2>
+              
+              <div className="space-y-4 pb-6 border-b border-gray-100">
+                <div className="flex justify-between text-gray-600">
+                  <span>Tạm tính ({selectedCount} sản phẩm)</span>
+                  <span className="font-medium text-gray-900">{formatVND(subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-gray-700">
-                  <span>Sản phẩm được chọn:</span>
-                  <span className="font-semibold text-gray-900">{selectedCount}</span>
-                </div>
-              </div>
-              <div className="space-y-4 mb-6">
-                <div className="flex justify-between text-lg">
-                  <span className="text-gray-700">Tạm tính:</span>
-                  <span className="font-bold text-gray-900">{formatVND(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-lg">
-                  <span className="text-gray-700">Vận chuyển:</span>
-                  <span className={`font-bold ${shipping === 0 ? 'text-green-600' : 'text-gray-900'}`}>{shipping === 0 ? 'Miễn phí' : formatVND(shipping)}</span>
+                <div className="flex justify-between text-gray-600">
+                  <span>Phí vận chuyển</span>
+                  <span className="font-medium text-green-600">Miễn phí</span>
                 </div>
               </div>
-              <div className="bg-gray-900 rounded-xl p-4 mb-6 border border-gray-900">
-                <div className="flex justify-between text-2xl font-black text-white">
-                  <span>Tổng cộng:</span>
-                  <span>{formatVND(total)}</span>
+
+              <div className="flex justify-between items-end pt-6 mb-8">
+                <span className="text-lg font-bold text-gray-900">Tổng cộng</span>
+                <div className="text-right">
+                  <span className="block text-2xl font-black text-blue-600">{formatVND(total)}</span>
+                  <span className="text-xs text-gray-500">(Đã bao gồm VAT)</span>
                 </div>
               </div>
-              <button onClick={() => navigate('/pay')} disabled={selectedCount === 0} className="w-full bg-gray-900 hover:bg-black disabled:bg-gray-400 text-white font-bold py-3 rounded-xl mb-3 transition duration-300">Thanh toán</button>
-              <a href="/Category" className="block w-full text-center bg-white hover:bg-gray-100 text-gray-900 font-bold py-3 rounded-xl border border-gray-300 transition duration-300">Tiếp tục mua sắm</a>
+
+              <button
+                onClick={() => navigate('/pay')}
+                disabled={selectedCount === 0}
+                className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                Tiến hành thanh toán <ArrowRight className="h-5 w-5" />
+              </button>
+
+              <div className="mt-6 text-center">
+                <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
+                  <ShieldCheckIcon /> Bảo mật thanh toán 100%
+                </p>
+              </div>
             </div>
           </div>
+
         </div>
       </div>
-    </main>
+    </div>
   );
 }
+
+// Icon component nhỏ
+const ShieldCheckIcon = () => (
+  <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+  </svg>
+);
 
 export default ShoppingCart;

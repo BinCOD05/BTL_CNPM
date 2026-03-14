@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import ProductCard from '../Components/ProductCard';
-import productsData from '../data/products.json';
+import { Filter, X, ChevronDown } from 'lucide-react';
 
 function useQuery() {
   return new URLSearchParams(useLocation().search);
@@ -9,28 +9,31 @@ function useQuery() {
 
 function Category() {
   const query = useQuery();
+  const navigate = useNavigate();
+
+  // URL Params
   const keyword = query.get('keyword') || '';
   const brandParam = query.get('brand') || '';
   const minPriceParam = query.get('minPrice') || '';
   const maxPriceParam = query.get('maxPrice') || '';
-  const sizeParam = query.get('size') || '';
+  const categoryId = query.get('categoryId') || '';
+
+  // State
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [filterKeyword, setFilterKeyword] = useState(keyword);
-  const [filterBrand, setFilterBrand] = useState(brandParam);
-  const [filterMin, setFilterMin] = useState(minPriceParam);
-  const [filterMax, setFilterMax] = useState(maxPriceParam);
+  const [showFilter, setShowFilter] = useState(false);
 
-  const navigate = useNavigate();
+  // Filter State
+  const [filters, setFilters] = useState({
+    keyword: keyword,
+    brand: brandParam,
+    minPrice: minPriceParam,
+    maxPrice: maxPriceParam,
+    categoryId: categoryId
+  });
 
-  const variantKey = (keyword || brandParam || '').toString().toLowerCase();
-  const isHeaderVariant = ['mac', 'iphone', 'samsung', 'ipad'].some(k => variantKey.includes(k));
-
-  // featured product image for hero (use first fetched product if available)
-  const featured = products && products.length > 0 ? products[0] : null;
-  const featuredImage = featured?.image || featured?.productImage || featured?.thumbnail || '';
-
+  // Fetch Products
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -38,10 +41,19 @@ function Category() {
         const token = localStorage.getItem('authToken');
         const headers = { 'Content-Type': 'application/json' };
         if (token) headers.Authorization = `Bearer ${token}`;
-        const size = sizeParam || 48;
-        const url = `http://localhost:8081/api/products?keyword=${encodeURIComponent(keyword)}&brand=${encodeURIComponent(brandParam)}&size=${size}&minPrice=${minPriceParam}&maxPrice=${maxPriceParam}`;
-        const res = await fetch(url, { headers });
+
+        // Build URL
+        const params = new URLSearchParams();
+        if (keyword) params.append('keyword', keyword);
+        if (brandParam) params.append('brand', brandParam);
+        if (minPriceParam) params.append('minPrice', minPriceParam);
+        if (maxPriceParam) params.append('maxPrice', maxPriceParam);
+        if (categoryId) params.append('categoryId', categoryId);
+        params.append('size', 100); // Lấy nhiều để client filter nếu cần
+
+        const res = await fetch(`http://localhost:8081/api/products?${params.toString()}`, { headers });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
         const data = await res.json();
         const list = data.result?.content || data.result || [];
         setProducts(list);
@@ -56,169 +68,229 @@ function Category() {
     };
 
     fetchProducts();
-  }, [keyword, brandParam, minPriceParam, maxPriceParam, sizeParam]);
+    // Sync state with URL params when URL changes
+    setFilters({ keyword, brand: brandParam, minPrice: minPriceParam, maxPrice: maxPriceParam, categoryId });
+  }, [keyword, brandParam, minPriceParam, maxPriceParam, categoryId]);
 
-  // derive brand options from local data as a fallback source
-  const brandOptions = (() => {
-    try {
-      const lists = Object.values(productsData).flat();
-      const set = new Set();
-      lists.forEach(p => { if (p.brand) set.add(p.brand); });
-      return Array.from(set).sort();
-    } catch (e) {
-      return [];
-    }
-  })();
-
+  // Handle Apply Filter
   const applyFilters = () => {
     const params = new URLSearchParams();
-    if (filterKeyword) params.set('keyword', filterKeyword);
-    if (filterBrand) params.set('brand', filterBrand);
-    if (filterMin) params.set('minPrice', filterMin);
-    if (filterMax) params.set('maxPrice', filterMax);
-    if (sizeParam) params.set('size', sizeParam);
+    if (filters.keyword) params.set('keyword', filters.keyword);
+    if (filters.brand) params.set('brand', filters.brand);
+    if (filters.minPrice) params.set('minPrice', filters.minPrice);
+    if (filters.maxPrice) params.set('maxPrice', filters.maxPrice);
+    if (filters.categoryId) params.set('categoryId', filters.categoryId);
+    
     navigate(`?${params.toString()}`);
+    setShowFilter(false); // Close mobile filter
   };
 
+  // Hardcoded options (Should fetch from API in real app)
+  const brands = ['Apple', 'Samsung', 'Xiaomi', 'Oppo', 'Sony', 'Asus', 'Dell', 'HP'];
+  const categories = [
+    { id: 1, name: 'Điện Thoại' },
+    { id: 2, name: 'Laptop' },
+    { id: 3, name: 'Tablet' },
+    { id: 4, name: 'Phụ Kiện' }
+  ];
+
+  // Dynamic Banner Info
+  const getBannerInfo = () => {
+    const k = (keyword || brandParam || '').toLowerCase();
+    if (k.includes('iphone') || k.includes('apple')) return { 
+      bg: 'bg-gradient-to-r from-gray-900 to-gray-800', 
+      title: 'Apple Store', 
+      desc: 'Khám phá hệ sinh thái Apple đỉnh cao.',
+      img: 'https://images.unsplash.com/photo-1556656793-02715d8dd660?auto=format&fit=crop&w=1600&q=80'
+    };
+    if (k.includes('samsung')) return { 
+      bg: 'bg-gradient-to-r from-blue-900 to-blue-700', 
+      title: 'Samsung Galaxy', 
+      desc: 'Đột phá công nghệ màn hình gập.',
+      img: 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?auto=format&fit=crop&w=1600&q=80'
+    };
+    if (k.includes('laptop') || k.includes('macbook')) return { 
+      bg: 'bg-gradient-to-r from-indigo-900 to-slate-800', 
+      title: 'Laptop & MacBook', 
+      desc: 'Hiệu năng mạnh mẽ cho công việc.',
+      img: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=1600&q=80'
+    };
+    return { 
+      bg: 'bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600', 
+      title: 'Cửa Hàng', 
+      desc: 'Tìm kiếm sản phẩm công nghệ yêu thích của bạn.',
+      img: '' 
+    };
+  };
+
+  const banner = getBannerInfo();
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-100 to-white pb-20 pt-10">
-      {/* Variant hero / landing header per brand/keyword */}
-      {(() => {
-        const v = (keyword || brandParam || '').toString().toLowerCase();
-        if (v.includes('mac')) {
-          return (
-            <section className="relative py-16 mb-8 bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-lg mx-6 md:mx-12 px-6">
-              <div className="max-w-6xl mx-auto">
-                <div className="flex flex-col md:flex-row items-center gap-6">
-                  <div className="flex-1">
-                    <h2 className="text-sm uppercase tracking-widest text-slate-300">Mac</h2>
-                    <h1 className="mt-2 text-4xl md:text-5xl font-extrabold">Mac — Hiệu năng chuyên nghiệp</h1>
-                    <p className="mt-4 text-lg text-slate-200">Hiệu năng mạnh mẽ cho sáng tạo và công việc chuyên sâu. Tìm các model MacBook, Mac mini và phụ kiện chính hãng.</p>
-                  </div>
-                  <div className="w-full md:w-96 h-56 bg-gray-100 rounded-lg overflow-hidden">
-                    <img src={featuredImage || '/public/images/mac-hero.jpg'} alt="mac" className="w-full h-full object-cover" />
-                  </div>
-                </div>
-              </div>
-            </section>
-          );
-        }
-        if (v.includes('iphone') || v.includes('iphone')) {
-          return (
-            <section className="relative py-16 mb-8 bg-white rounded-lg mx-6 md:mx-12 px-6 shadow-sm">
-              <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center gap-6">
-                <div className="flex-1">
-                  <h2 className="text-sm uppercase tracking-widest text-blue-600">iPhone</h2>
-                  <h1 className="mt-2 text-4xl md:text-5xl font-extrabold text-slate-900">iPhone — Nâng cấp trải nghiệm</h1>
-                  <p className="mt-4 text-lg text-slate-600">Camera, chip và thiết kế mới. Tìm model phù hợp cùng phụ kiện và bảo hành chính hãng.</p>
-                </div>
-                <div className="w-full md:w-96 h-56 bg-gray-100 rounded-lg overflow-hidden">
-                  <img src={featuredImage || '/public/images/iphone-hero.jpg'} alt="iphone" className="w-full h-full object-cover" />
-                </div>
-              </div>
-            </section>
-          );
-        }
-        if (v.includes('samsung')) {
-          return (
-            <section className="relative py-16 mb-8 bg-gradient-to-r from-blue-700 to-sky-600 text-white rounded-lg mx-6 md:mx-12 px-6">
-              <div className="max-w-6xl mx-auto">
-                <div className="flex flex-col md:flex-row items-center gap-6">
-                  <div className="flex-1">
-                    <h2 className="text-sm uppercase tracking-widest text-sky-200">Samsung</h2>
-                    <h1 className="mt-2 text-4xl md:text-5xl font-extrabold">Samsung — Đổi mới công nghệ</h1>
-                    <p className="mt-4 text-lg text-sky-100">Màn hình tuyệt vời, camera sáng tạo và trải nghiệm toàn diện. Khám phá Galaxy series và thiết bị Samsung.</p>
-                  </div>
-                  <div className="w-full md:w-96 h-56 bg-gray-100 rounded-lg overflow-hidden">
-                    <img src={featuredImage || '/public/images/samsung-hero.jpg'} alt="samsung" className="w-full h-full object-cover" />
-                  </div>
-                </div>
-              </div>
-            </section>
-          );
-        }
-        if (v.includes('ipad') || v.includes('ipad')) {
-          return (
-            <section className="relative py-16 mb-8 bg-white rounded-lg mx-6 md:mx-12 px-6 shadow-sm">
-              <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center gap-6">
-                <div className="flex-1">
-                  <h2 className="text-sm uppercase tracking-widest text-purple-600">iPad</h2>
-                  <h1 className="mt-2 text-4xl md:text-5xl font-extrabold text-slate-900">iPad — Sáng tạo & Di động</h1>
-                  <p className="mt-4 text-lg text-slate-600">Hiệu suất cho sáng tạo, học tập và làm việc. Xem iPad Pro, Air và phụ kiện tương thích.</p>
-                </div>
-                <div className="w-full md:w-96 h-56 bg-gray-100 rounded-lg overflow-hidden">
-                  <img src={featuredImage || '/public/images/ipad-hero.jpg'} alt="ipad" className="w-full h-full object-cover" />
-                </div>
-              </div>
-            </section>
-          );
-        }
-
-        return (
-          <section className="relative py-12 hero-bg mb-8">
-            <div className="hero-pattern absolute inset-0 z-0 pointer-events-none" aria-hidden="true" />
-            <div className="mx-auto max-w-6xl px-6 text-center relative z-10">
-              <p className="text-sm uppercase tracking-widest text-blue-600">Khám phá</p>
-              <h1 className="mt-2 text-4xl font-bold text-slate-900">{keyword ? `Kết quả: "${keyword}"` : 'Danh mục sản phẩm'}</h1>
-              <p className="mt-4 text-base text-slate-600">{keyword ? `Tìm thấy ${products.length} sản phẩm` : 'Chọn thương hiệu hoặc danh mục để bắt đầu.'}</p>
-            </div>
-          </section>
-        );
-      })()}
-
-      {/* Filter strip: keyword, brand, min/max price (select-only) */}
-      <div className="mx-auto max-w-7xl px-6">
-        <div className="bg-white rounded-lg p-4 shadow-sm flex flex-col md:flex-row items-center gap-3">
-          <input
-            value={filterKeyword}
-            onChange={e => setFilterKeyword(e.target.value)}
-            placeholder="Tìm kiếm theo tên sản phẩm"
-            className="w-full md:flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
-          />
-
-          {!isHeaderVariant && (
-            <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)} className="w-full md:w-52 px-3 py-3 border border-gray-200 rounded-lg bg-white">
-              <option value="">Tất cả hãng</option>
-              {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          )}
-
-          <select value={filterMin} onChange={e => setFilterMin(e.target.value)} className="w-40 px-3 py-3 border border-gray-200 rounded-lg bg-white">
-            <option value="">Min giá</option>
-            <option value="0">Tất cả</option>
-            <option value="1000000">≥ 1.000.000 đ</option>
-            <option value="5000000">≥ 5.000.000 đ</option>
-            <option value="10000000">≥ 10.000.000 đ</option>
-          </select>
-
-          <select value={filterMax} onChange={e => setFilterMax(e.target.value)} className="w-40 px-3 py-3 border border-gray-200 rounded-lg bg-white">
-            <option value="">Max giá</option>
-            <option value="500000">≤ 500.000 đ</option>
-            <option value="1000000">≤ 1.000.000 đ</option>
-            <option value="5000000">≤ 5.000.000 đ</option>
-            <option value="10000000">≤ 10.000.000 đ</option>
-            <option value="9999999999">Không giới hạn</option>
-          </select>
-
-          <div className="ml-auto md:ml-0">
-            <button onClick={applyFilters} className="px-4 py-3 bg-gray-900 text-white rounded-lg">Áp dụng</button>
-          </div>
+    <div className="min-h-screen bg-gray-50 pb-20 font-Roboto">
+      
+      {/* Hero Banner */}
+      <div className={`relative ${banner.bg} text-white py-16 md:py-24 px-6 mb-8 overflow-hidden`}>
+        {banner.img && <img src={banner.img} alt="banner" className="absolute inset-0 w-full h-full object-cover opacity-20 mix-blend-overlay" />}
+        <div className="relative z-10 max-w-7xl mx-auto text-center md:text-left">
+          <h1 className="text-4xl md:text-6xl font-black mb-4 tracking-tight">{banner.title}</h1>
+          <p className="text-lg md:text-xl text-gray-200 max-w-2xl">{banner.desc}</p>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 mt-6">
-        {loading && <div className="text-center py-20">Đang tải...</div>}
-        {error && <div className="text-center py-6 text-red-500">Lỗi: {error}</div>}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col lg:flex-row gap-8">
+          
+          {/* --- SIDEBAR FILTER (Desktop) --- */}
+          <aside className={`lg:w-1/4 ${showFilter ? 'fixed inset-0 z-50 bg-white p-6 overflow-y-auto' : 'hidden lg:block'}`}>
+            <div className="flex justify-between items-center mb-6 lg:hidden">
+              <h2 className="text-xl font-bold">Bộ lọc</h2>
+              <button onClick={() => setShowFilter(false)}><X size={24} /></button>
+            </div>
 
-        {!loading && !error && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {products.map(p => (
-              <ProductCard key={p.id} product={p} />
-            ))}
-          </div>
-        )}
+            <div className="space-y-8 sticky top-24">
+              {/* Search Keyword */}
+              <div>
+                <h3 className="font-bold mb-3">Tìm kiếm</h3>
+                <input 
+                  type="text" 
+                  value={filters.keyword}
+                  onChange={(e) => setFilters({...filters, keyword: e.target.value})}
+                  placeholder="Tên sản phẩm..."
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <h3 className="font-bold mb-3">Danh mục</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="cat" 
+                      checked={!filters.categoryId} 
+                      onChange={() => setFilters({...filters, categoryId: ''})} 
+                      className="accent-blue-600"
+                    />
+                    <span>Tất cả</span>
+                  </label>
+                  {categories.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="cat"
+                        value={c.id}
+                        checked={Number(filters.categoryId) === c.id}
+                        onChange={() => setFilters({...filters, categoryId: c.id})}
+                        className="accent-blue-600"
+                      />
+                      <span>{c.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Brand Filter */}
+              <div>
+                <h3 className="font-bold mb-3">Thương hiệu</h3>
+                <select 
+                  value={filters.brand} 
+                  onChange={(e) => setFilters({...filters, brand: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white"
+                >
+                  <option value="">Tất cả thương hiệu</option>
+                  {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+
+              {/* Price Filter */}
+              <div>
+                <h3 className="font-bold mb-3">Khoảng giá</h3>
+                <div className="flex gap-2 items-center mb-2">
+                  <input 
+                    type="number" 
+                    placeholder="Min" 
+                    value={filters.minPrice}
+                    onChange={(e) => setFilters({...filters, minPrice: e.target.value})}
+                    className="w-full border px-3 py-2 rounded-lg text-sm"
+                  />
+                  <span>-</span>
+                  <input 
+                    type="number" 
+                    placeholder="Max" 
+                    value={filters.maxPrice}
+                    onChange={(e) => setFilters({...filters, maxPrice: e.target.value})}
+                    className="w-full border px-3 py-2 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              <button 
+                onClick={applyFilters} 
+                className="w-full bg-gray-900 text-white font-bold py-3 rounded-xl hover:bg-black transition"
+              >
+                Áp dụng bộ lọc
+              </button>
+            </div>
+          </aside>
+
+          {/* --- MAIN CONTENT (Product Grid) --- */}
+          <main className="lg:w-3/4">
+            {/* Toolbar Mobile */}
+            <div className="flex justify-between items-center mb-6 lg:hidden">
+              <span className="font-medium text-gray-600">{products.length} sản phẩm</span>
+              <button 
+                onClick={() => setShowFilter(true)} 
+                className="flex items-center gap-2 bg-white border px-4 py-2 rounded-lg shadow-sm"
+              >
+                <Filter size={18} /> Bộ lọc
+              </button>
+            </div>
+
+            {/* Desktop Count */}
+            <div className="hidden lg:flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-900">Kết quả tìm kiếm</h2>
+              <span className="text-gray-500">{products.length} sản phẩm được tìm thấy</span>
+            </div>
+
+            {/* Loading & Error */}
+            {loading && (
+              <div className="flex justify-center py-20">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-50 text-red-600 p-4 rounded-lg text-center border border-red-200">
+                {error}
+              </div>
+            )}
+
+            {/* Empty State */}
+            {!loading && !error && products.length === 0 && (
+              <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
+                <p className="text-gray-500 text-lg">Không tìm thấy sản phẩm nào phù hợp.</p>
+                <button onClick={() => { setFilters({keyword:'', brand:'', minPrice:'', maxPrice:'', categoryId:''}); navigate('?'); }} className="mt-4 text-blue-600 hover:underline">
+                  Xóa bộ lọc
+                </button>
+              </div>
+            )}
+
+            {/* Product Grid */}
+            {!loading && !error && products.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                {products.map(product => (
+                  <div key={product.id} className="transition-transform hover:-translate-y-1 duration-300">
+                    <ProductCard product={product} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </main>
+
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
